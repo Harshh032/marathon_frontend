@@ -14,7 +14,7 @@ interface GeniusLoginCredentials {
   Password: string;
 }
 
-const BASE_API_URL = 'http://127.0.0.1:8000';
+const BASE_API_URL = 'http://50.6.225.185:8000';
 
 const GeniusLoginModal: React.FC<GeniusLoginModalProps> = ({ 
   isOpen, 

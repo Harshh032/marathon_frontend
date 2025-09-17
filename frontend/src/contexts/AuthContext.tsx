@@ -54,7 +54,7 @@ function authReducer(state: AuthState, action: AuthAction): AuthState {
 }
 
 // API configuration
-const API_BASE_URL = 'http://127.0.0.1:8000';
+const API_BASE_URL = 'http://50.6.225.185:8000';
 
 
 // Mock users for demo purposes (kept for user management features)

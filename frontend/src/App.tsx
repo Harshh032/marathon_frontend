@@ -16,7 +16,7 @@ import './notification-animations.css';
 import { Document, Page, pdfjs } from 'react-pdf';
 import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
 
-const BASE_API_URL = 'http://127.0.0.1:8000';
+const BASE_API_URL = 'http://50.6.225.185:8000';
 
 function DashboardApp() {
   const { state, logActivity, logout } = useAuth();
