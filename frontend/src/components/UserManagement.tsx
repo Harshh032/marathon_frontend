@@ -1,8 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { Users, Plus, Trash2, Shield, User as UserIcon, Mail, Calendar, Clock, AlertCircle, CheckCircle, X } from 'lucide-react';
-import { useAuth, useUsers } from '../contexts/AuthContext';
-import { User, CreateUserData } from '../types';
+import { useAuth } from '../contexts/AuthContext';
+import { User, CreateUserData, ApiUser } from '../types';
 import UserProfile from '../UserProfile';
+import { createApiClient } from '../utils/apiClient';
+
+const BASE_API_URL = 'http://50.6.225.185:8000';
 
 interface CreateUserModalProps {
   isOpen: boolean;
@@ -12,7 +15,7 @@ interface CreateUserModalProps {
 
 function CreateUserModal({ isOpen, onClose, onCreateUser }: CreateUserModalProps) {
   const [formData, setFormData] = useState<CreateUserData>({
-    name: '',
+    username: '',
     email: '',
     password: '',
     role: 'user',
@@ -23,8 +26,8 @@ function CreateUserModal({ isOpen, onClose, onCreateUser }: CreateUserModalProps
   const validateForm = (): boolean => {
     const newErrors: Partial<CreateUserData> = {};
 
-    if (!formData.name.trim()) {
-      newErrors.name = 'Name is required';
+    if (!formData.username.trim()) {
+      newErrors.username = 'Username is required';
     }
 
     if (!formData.email.trim()) {
@@ -49,10 +52,8 @@ function CreateUserModal({ isOpen, onClose, onCreateUser }: CreateUserModalProps
 
     setLoading(true);
     try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1000));
       onCreateUser(formData);
-      setFormData({ name: '', email: '', password: '', role: 'user' });
+      setFormData({ username: '', email: '', password: '', role: 'user' });
       setErrors({});
       onClose();
     } catch (error) {
@@ -63,7 +64,7 @@ function CreateUserModal({ isOpen, onClose, onCreateUser }: CreateUserModalProps
   };
 
   const handleClose = () => {
-    setFormData({ name: '', email: '', password: '', role: 'user' });
+    setFormData({ username: '', email: '', password: '', role: 'user' });
     setErrors({});
     onClose();
   };
@@ -84,15 +85,15 @@ function CreateUserModal({ isOpen, onClose, onCreateUser }: CreateUserModalProps
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Username</label>
             <input
               type="text"
-              value={formData.name}
-              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+              value={formData.username}
+              onChange={(e) => setFormData({ ...formData, username: e.target.value })}
               className="w-full px-3 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-black focus:border-transparent"
-              placeholder="Enter full name"
+              placeholder="Enter username"
             />
-            {errors.name && <p className="text-red-600 text-sm mt-1">{errors.name}</p>}
+            {errors.username && <p className="text-red-600 text-sm mt-1">{errors.username}</p>}
           </div>
 
           <div>
@@ -163,51 +164,115 @@ function CreateUserModal({ isOpen, onClose, onCreateUser }: CreateUserModalProps
   );
 }
 
+// Helper function to convert API user to internal User format
+const convertApiUserToUser = (apiUser: ApiUser): User => {
+  return {
+    id: apiUser.id.toString(),
+    name: apiUser.username,
+    email: apiUser.email,
+    role: apiUser.role,
+    createdAt: apiUser.created_at,
+    lastLogin: undefined, // API doesn't provide this yet
+  };
+};
+
 export default function UserManagement() {
-  const { state, logActivity } = useAuth();
-  const { getUsers, createUser, deleteUser } = useUsers();
+  const auth = useAuth();
+  const { state, logActivity } = auth;
   const [users, setUsers] = useState<User[]>([]);
+  const [loading, setLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [notification, setNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  
+  // Create API client with auth context
+  const apiClient = createApiClient(auth);
+
+  // Function to fetch users from API
+  const fetchUsers = async () => {
+    if (state.user?.role !== 'admin') {
+      setNotification({ type: 'error', message: 'Only admin users can access user management.' });
+      setTimeout(() => setNotification(null), 3000);
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const result = await apiClient.get<ApiUser[]>('/admin/users');
+      
+      if (result.success && result.data) {
+        const convertedUsers = result.data.map(convertApiUserToUser);
+        setUsers(convertedUsers);
+      } else {
+        throw new Error(result.error || 'Failed to fetch users');
+      }
+    } catch (error: any) {
+      console.error('Error fetching users:', error);
+      setNotification({ type: 'error', message: error.message || 'Failed to fetch users. Please try again.' });
+      setTimeout(() => setNotification(null), 3000);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    try {
-      const allUsers = getUsers();
-      setUsers(allUsers);
-    } catch (error) {
-      console.error('Error fetching users:', error);
-    }
-  }, [getUsers]);
+    fetchUsers();
+  }, [state.user, state.token]);
 
   const handleCreateUser = async (userData: CreateUserData) => {
+    if (state.user?.role !== 'admin') {
+      setNotification({ type: 'error', message: 'Only admin users can create users.' });
+      setTimeout(() => setNotification(null), 3000);
+      return;
+    }
+
     try {
-      const newUser = createUser({
-        ...userData,
+      const result = await apiClient.post<ApiUser>('/admin/users', {
+        username: userData.username,
+        email: userData.email,
+        password: userData.password,
+        role: userData.role,
       });
-      
-      setUsers(prev => [...prev, newUser]);
-      logActivity('User Created', `Created new user: ${newUser.name} (${newUser.email}) with ${newUser.role} role`);
-      setNotification({ type: 'success', message: `User ${newUser.name} created successfully!` });
+
+      if (result.success && result.data) {
+        const newUser = convertApiUserToUser(result.data);
+        setUsers(prev => [...prev, newUser]);
+        logActivity('User Created', `Created new user: ${newUser.name} (${newUser.email}) with ${newUser.role} role`);
+        setNotification({ type: 'success', message: `User ${newUser.name} created successfully!` });
+      } else {
+        throw new Error(result.error || 'Failed to create user');
+      }
       
       // Clear notification after 3 seconds
       setTimeout(() => setNotification(null), 3000);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error creating user:', error);
-      setNotification({ type: 'error', message: 'Failed to create user. Please try again.' });
+      setNotification({ type: 'error', message: error.message || 'Failed to create user. Please try again.' });
       setTimeout(() => setNotification(null), 3000);
     }
   };
 
-  const handleDeleteUser = (userId: string, userName: string) => {
-    try {
-      deleteUser(userId);
-      setUsers(prev => prev.filter(user => user.id !== userId));
-      logActivity('User Deleted', `Deleted user: ${userName}`);
-      setNotification({ type: 'success', message: `User ${userName} deleted successfully!` });
+  const handleDeleteUser = async (userId: string, userName: string) => {
+    if (state.user?.role !== 'admin') {
+      setNotification({ type: 'error', message: 'Only admin users can delete users.' });
       setTimeout(() => setNotification(null), 3000);
-    } catch (error) {
+      return;
+    }
+
+    try {
+      const result = await apiClient.delete(`/admin/users/${userId}`);
+      
+      if (result.success) {
+        setUsers(prev => prev.filter(user => user.id !== userId));
+        logActivity('User Deleted', `Deleted user: ${userName}`);
+        setNotification({ type: 'success', message: `User ${userName} deleted successfully!` });
+      } else {
+        throw new Error(result.error || 'Failed to delete user');
+      }
+      
+      setTimeout(() => setNotification(null), 3000);
+    } catch (error: any) {
       console.error('Error deleting user:', error);
-      setNotification({ type: 'error', message: 'Failed to delete user. Please try again.' });
+      setNotification({ type: 'error', message: error.message || 'Failed to delete user. Please try again.' });
       setTimeout(() => setNotification(null), 3000);
     }
   };
@@ -267,75 +332,88 @@ export default function UserManagement() {
         </div>
         
         <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">User</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Role</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Created</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Last Login</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              {users.map((user) => (
-                <tr key={user.id} className="hover:bg-gray-50">
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="flex items-center space-x-3">
-                      <UserProfile name={user.name} role={user.role} />
-                      <div>
-                        <div className="text-sm font-medium text-gray-900">{user.name}</div>
-                        <div className="text-sm text-gray-500">{user.email}</div>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="flex items-center space-x-2">
-                      {user.role === 'admin' ? (
-                        <>
-                          <Shield className="h-4 w-4 text-blue-600" />
-                          <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-800">
-                            Admin
-                          </span>
-                        </>
-                      ) : (
-                        <>
-                          <UserIcon className="h-4 w-4 text-green-600" />
-                          <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800">
-                            User
-                          </span>
-                        </>
-                      )}
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    <div className="flex items-center space-x-2">
-                      <Calendar className="h-4 w-4" />
-                      <span>{formatDate(user.createdAt)}</span>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    <div className="flex items-center space-x-2">
-                      <Clock className="h-4 w-4" />
-                      <span>
-                        {user.lastLogin ? formatDate(user.lastLogin) : 'Never'}
-                      </span>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                    <button
-                      onClick={() => handleDeleteUser(user.id, user.name)}
-                      disabled={user.id === state.user?.id} // Can't delete yourself
-                      className="text-red-600 hover:text-red-700 disabled:text-gray-400 disabled:cursor-not-allowed"
-                      title={user.id === state.user?.id ? "You cannot delete your own account" : "Delete user"}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  </td>
+          {loading ? (
+            <div className="p-8 text-center">
+              <div className="animate-spin rounded-full h-12 w-12 border-2 border-black border-t-transparent mx-auto mb-4"></div>
+              <p className="text-gray-600 font-medium">Loading users...</p>
+            </div>
+          ) : users.length === 0 ? (
+            <div className="p-8 text-center text-gray-500">
+              <Users className="h-12 w-12 mx-auto mb-4 text-gray-400" />
+              <p className="font-medium">No users found</p>
+              <p className="text-sm">Create your first user to get started.</p>
+            </div>
+          ) : (
+            <table className="w-full">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">User</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Role</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Created</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Last Login</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {users.map((user) => (
+                  <tr key={user.id} className="hover:bg-gray-50">
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="flex items-center space-x-3">
+                        <UserProfile name={user.name} role={user.role} />
+                        <div>
+                          <div className="text-sm font-medium text-gray-900">{user.name}</div>
+                          <div className="text-sm text-gray-500">{user.email}</div>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="flex items-center space-x-2">
+                        {user.role === 'admin' ? (
+                          <>
+                            <Shield className="h-4 w-4 text-blue-600" />
+                            <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-800">
+                              Admin
+                            </span>
+                          </>
+                        ) : (
+                          <>
+                            <UserIcon className="h-4 w-4 text-green-600" />
+                            <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800">
+                              User
+                            </span>
+                          </>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      <div className="flex items-center space-x-2">
+                        <Calendar className="h-4 w-4" />
+                        <span>{formatDate(user.createdAt)}</span>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      <div className="flex items-center space-x-2">
+                        <Clock className="h-4 w-4" />
+                        <span>
+                          {user.lastLogin ? formatDate(user.lastLogin) : 'Never'}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                      <button
+                        onClick={() => handleDeleteUser(user.id, user.name)}
+                        disabled={user.id === state.user?.id} // Can't delete yourself
+                        className="text-red-600 hover:text-red-700 disabled:text-gray-400 disabled:cursor-not-allowed"
+                        title={user.id === state.user?.id ? "You cannot delete your own account" : "Delete user"}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </div>
       </div>
 

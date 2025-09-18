@@ -5,8 +5,10 @@ interface AuthContextType {
   state: AuthState;
   login: (credentials: LoginCredentials) => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
+  logoutDueToExpiration: () => void;
   updateUser: (user: User) => void;
   logActivity: (action: string, details: string) => void;
+  isTokenExpired: (error: any) => boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -15,6 +17,7 @@ type AuthAction =
   | { type: 'LOGIN_SUCCESS'; payload: { user: User; token: string } }
   | { type: 'LOGIN_FAILURE' }
   | { type: 'LOGOUT' }
+  | { type: 'LOGOUT_EXPIRED' }
   | { type: 'UPDATE_USER'; payload: User };
 
 const initialState: AuthState = {
@@ -38,6 +41,14 @@ function authReducer(state: AuthState, action: AuthAction): AuthState {
         token: null,
       };
     case 'LOGOUT':
+      return {
+        isAuthenticated: false,
+        user: null,
+        token: null,
+      };
+    case 'LOGOUT_EXPIRED':
+      // Set flag in localStorage to show timeout message on login page
+      localStorage.setItem('sessionExpired', 'true');
       return {
         isAuthenticated: false,
         user: null,
@@ -180,7 +191,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       logActivity('User Logout', `User ${state.user.name} logged out`);
     }
     localStorage.removeItem('authData');
+    localStorage.removeItem('sessionExpired');
     dispatch({ type: 'LOGOUT' });
+  };
+
+  const logoutDueToExpiration = () => {
+    if (state.user) {
+      logActivity('Session Expired', `User ${state.user.name} session expired`);
+    }
+    localStorage.removeItem('authData');
+    dispatch({ type: 'LOGOUT_EXPIRED' });
+  };
+
+  const isTokenExpired = (error: any): boolean => {
+    // Check if error indicates token expiration
+    if (error?.response?.status === 401 || error?.response?.status === 403) {
+      return true;
+    }
+    
+    // Check fetch response
+    if (error?.status === 401 || error?.status === 403) {
+      return true;
+    }
+    
+    // Check error message patterns that indicate token expiration
+    const errorMessage = error?.message?.toLowerCase() || '';
+    return errorMessage.includes('unauthorized') || 
+           errorMessage.includes('token expired') || 
+           errorMessage.includes('invalid token') ||
+           errorMessage.includes('access denied');
   };
 
   const updateUser = (user: User) => {
@@ -223,8 +262,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       state,
       login,
       logout,
+      logoutDueToExpiration,
       updateUser,
       logActivity,
+      isTokenExpired,
     }}>
       {children}
     </AuthContext.Provider>

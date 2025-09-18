@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { LogIn, User, Lock, Eye, EyeOff, AlertCircle } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { LogIn, User, Lock, Eye, EyeOff, AlertCircle, Clock } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { LoginCredentials } from '../types';
 
@@ -16,7 +16,16 @@ export default function Login({ onClose }: LoginProps) {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [sessionExpired, setSessionExpired] = useState(false);
 
+  // Check for session expiration flag on component mount
+  useEffect(() => {
+    const expired = localStorage.getItem('sessionExpired');
+    if (expired === 'true') {
+      setSessionExpired(true);
+      localStorage.removeItem('sessionExpired');
+    }
+  }, []);
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -25,6 +34,7 @@ export default function Login({ onClose }: LoginProps) {
     try {
       const result = await login(credentials);
       if (result.success) {
+        setSessionExpired(false); // Clear any session expired message on successful login
         if (onClose) onClose();
       } else {
         setError(result.error || 'Login failed');
@@ -104,6 +114,14 @@ export default function Login({ onClose }: LoginProps) {
                 </button>
               </div>
             </div>
+
+            {/* Session Expired Message */}
+            {sessionExpired && (
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-center space-x-3">
+                <Clock className="h-5 w-5 text-amber-600 flex-shrink-0" />
+                <p className="text-amber-700 text-sm">Your login session has timed out. Please sign in again.</p>
+              </div>
+            )}
 
             {/* Error Message */}
             {error && (

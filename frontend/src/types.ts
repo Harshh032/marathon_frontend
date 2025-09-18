@@ -31,6 +31,16 @@ export interface User {
   lastLogin?: string;
 }
 
+export interface ApiUser {
+  id: number;
+  username: string;
+  email: string;
+  role: 'admin' | 'user';
+  is_active: boolean;
+  created_at: string;
+  created_by: number;
+}
+
 export interface GeniusAuthState {
   isAuthenticated: boolean;
   token: string | null;
@@ -55,7 +65,7 @@ export interface LoginCredentials {
 }
 
 export interface CreateUserData {
-  name: string;
+  username: string;
   email: string;
   password: string;
   role: 'admin' | 'user';
