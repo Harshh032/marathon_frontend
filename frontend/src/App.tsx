@@ -131,7 +131,7 @@ function DashboardApp() {
     if (activeTab === 'Validation Queue' || activeTab === 'Dashboard') {
       setValidationLoading(true);
       setValidationError(null);
-      fetchJson(`${BASE_API_URL}/api/v1/invoices`)
+      fetchJson(`${BASE_API_URL}/invoices/invoices`)
         .then((data) => {
           setValidationInvoices(data);
         })
@@ -145,7 +145,7 @@ function DashboardApp() {
   useEffect(() => {
     setInvoiceCountLoading(true);
     setInvoiceCountError(null);
-    fetchJson(`${BASE_API_URL}/api/v1/invoices/count`)
+    fetchJson(`${BASE_API_URL}/invoices/invoices/count`)
       .then((data) => {
         setInvoiceCount(data.count);
       })
@@ -158,19 +158,19 @@ function DashboardApp() {
 
   useEffect(() => {
     setApprovedCountLoading(true);
-    fetchJson(`${BASE_API_URL}/api/v1/invoices/count/approved`)
+    fetchJson(`${BASE_API_URL}/invoices/invoices/count/approved`)
       .then((data) => setApprovedCount(data.count))
       .catch(() => setApprovedCount(0))
       .finally(() => setApprovedCountLoading(false));
 
     setPendingCountLoading(true);
-    fetchJson(`${BASE_API_URL}/api/v1/invoices/count/pending`)
+    fetchJson(`${BASE_API_URL}/invoices/invoices/count/pending`)
       .then((data) => setPendingCount(data.count))
       .catch(() => setPendingCount(0))
       .finally(() => setPendingCountLoading(false));
 
     setErrorCountLoading(true);
-    fetchJson(`${BASE_API_URL}/api/v1/invoices/count/error`)
+    fetchJson(`${BASE_API_URL}/invoices/invoices/count/error`)
       .then((data) => setErrorCount(data.count))
       .catch(() => setErrorCount(0))
       .finally(() => setErrorCountLoading(false));
@@ -222,23 +222,51 @@ function DashboardApp() {
     setUploading(true);
     setUploadError(null);
     setUploadResult(null);
-    const file = files[0]; // Only handle the first file for now
+    
     const formData = new FormData();
-    formData.append('file', file);
-    try {
-      const response = await fetch(`${BASE_API_URL}/api/v1/invoices/upload`, {
-        method: 'POST',
-        body: formData,
-      });
-      if (!response.ok) {
-        throw new Error('Failed to upload file');
+    
+    // Check if we have multiple files
+    if (files.length > 1) {
+      // Use the upload-multiple endpoint for multiple files
+      for (let i = 0; i < files.length; i++) {
+        formData.append('files', files[i]);
       }
-      const data = await response.json();
-      setUploadResult(data);
-    } catch (error: any) {
-      setUploadError(error.message || 'Unknown error');
-    } finally {
-      setUploading(false);
+      
+      try {
+        const response = await fetch(`${BASE_API_URL}/invoices/invoices/upload-multiple`, {
+          method: 'POST',
+          body: formData,
+        });
+        if (!response.ok) {
+          throw new Error('Failed to upload files');
+        }
+        const data = await response.json();
+        setUploadResult(data);
+      } catch (error: any) {
+        setUploadError(error.message || 'Unknown error');
+      } finally {
+        setUploading(false);
+      }
+    } else {
+      // Use the single file upload endpoint for single files
+      const file = files[0];
+      formData.append('file', file);
+      
+      try {
+        const response = await fetch(`${BASE_API_URL}/invoices/invoices/upload`, {
+          method: 'POST',
+          body: formData,
+        });
+        if (!response.ok) {
+          throw new Error('Failed to upload file');
+        }
+        const data = await response.json();
+        setUploadResult(data);
+      } catch (error: any) {
+        setUploadError(error.message || 'Unknown error');
+      } finally {
+        setUploading(false);
+      }
     }
   };
 
@@ -482,7 +510,7 @@ function DashboardApp() {
 
   const handleDeleteInvoice = async (invoiceId: string) => {
     try {
-      const response = await fetch(`${BASE_API_URL}/api/v1/invoices/${invoiceId}`, {
+      const response = await fetch(`${BASE_API_URL}/invoices/invoices/${invoiceId}`, {
         method: 'DELETE',
         headers: { 'accept': 'application/json' },
       });
@@ -662,7 +690,7 @@ function DashboardApp() {
       if (result.success && result.push_result?.success) {
         // Update invoice status to Approved in database
         try {
-          const statusUpdateResponse = await fetch(`${BASE_API_URL}/api/v1/invoices/update-status-by-id`, {
+          const statusUpdateResponse = await fetch(`${BASE_API_URL}/invoices/invoices/update-status-by-id`, {
             method: 'PUT',
             headers: {
               'Content-Type': 'application/json',
@@ -791,7 +819,7 @@ function DashboardApp() {
       };
 
       // Call the new reprocess API endpoint
-      const response = await fetch(`${BASE_API_URL}/api/v1/invoices/${selectedInvoice.id}/reprocess`, {
+      const response = await fetch(`${BASE_API_URL}/invoices/invoices/${selectedInvoice.id}/reprocess`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -989,7 +1017,7 @@ function DashboardApp() {
       if (result.success && result.push_result?.success) {
         // Update invoice status to Approved in database
         try {
-          const statusUpdateResponse = await fetch(`${BASE_API_URL}/api/v1/invoices/update-status-by-id`, {
+          const statusUpdateResponse = await fetch(`${BASE_API_URL}/invoices/invoices/update-status-by-id`, {
             method: 'PUT',
             headers: {
               'Content-Type': 'application/json',
